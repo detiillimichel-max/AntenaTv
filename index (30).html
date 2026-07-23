@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OIO TV - Layout Bonito + Edges Reais</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#080808">
+  <link rel="stylesheet" href="style.css?v=3.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <header class="navbar">
+      <div class="logo"><i class="fa-solid fa-play"></i> OIO TV</div>
+      <div class="nav-actions">
+        <button id="btn-search"><i class="fa-solid fa-magnifying-glass"></i></button>
+        <button id="btn-profile"><i class="fa-solid fa-circle-user"></i></button>
+      </div>
+    </header>
+
+    <!-- HERO IGUAL SUA PRINT - Big Buck Bunny -->
+    <section id="hero" class="hero">
+      <div class="hero-bg" id="hero-bg" style="background-image:url('https://peach.blender.org/wp-content/uploads/bbb-splash.png?x11217')"></div>
+      <div class="hero-overlay"></div>
+      <div class="hero-content">
+        <span class="badge">OIO ORIGINALS • DESTAQUE</span>
+        <h1 id="hero-title">Big Buck Bunny</h1>
+        <p id="hero-desc">Open movie Blender</p>
+        <div class="hero-buttons">
+          <button class="btn-primary" id="hero-play"><i class="fa-solid fa-play"></i> Assistir</button>
+          <button class="btn-secondary" id="hero-info"><i class="fa-solid fa-circle-info"></i> Detalhes</button>
+        </div>
+      </div>
+      <div class="hero-status" id="hero-status">● 11 • .MP4 DIRETO • EDGES REAIS</div>
+    </section>
+
+    <main class="content-rows" id="content-container">
+      <!-- Fileira igual sua print -->
+      <div class="row" id="row-nasa">
+        <div class="row-header">
+          <h2>Series & Documentarios • NASA + TED</h2>
+          <span class="row-count" id="row-count-nasa">11 • .MP4 DIRETO</span>
+        </div>
+        <div class="row-cards" id="cards-nasa">
+          <div class="card skeleton"><div class="card-img-wrap skeleton-img"></div><div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div></div>
+          <div class="card skeleton"><div class="card-img-wrap skeleton-img"></div><div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div></div>
+          <div class="card skeleton"><div class="card-img-wrap skeleton-img"></div><div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div></div>
+        </div>
+      </div>
+
+      <div class="row" id="row-youtube">
+        <div class="row-header">
+          <h2>Filmes em Alta • YouTube Edge + Blender</h2>
+          <span class="row-count">5 • .MP4 DIRETO</span>
+        </div>
+        <div class="row-cards" id="cards-youtube"></div>
+      </div>
+
+      <div class="row" id="row-archive">
+        <div class="row-header">
+          <h2>Desenhos & Animacoes • Archive + PeerTube Edge</h2>
+          <span class="row-count">5 • .MP4 DIRETO</span>
+        </div>
+        <div class="row-cards" id="cards-archive"></div>
+      </div>
+    </main>
+
+    <div id="player-modal" class="modal hidden">
+      <div class="modal-content">
+        <button id="modal-close"><i class="fa-solid fa-xmark"></i></button>
+        <div class="player-wrapper" id="player-container"></div>
+        <div class="modal-info">
+          <h2 id="modal-title"></h2>
+          <p id="modal-desc"></p>
+          <div class="player-meta" id="player-meta"></div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="bottom-nav">
+      <a href="#" class="nav-item active" data-tab="home"><i class="fa-solid fa-house"></i><span>Home</span></a>
+      <a href="#" class="nav-item" data-tab="filmes"><i class="fa-solid fa-film"></i><span>Filmes</span></a>
+      <a href="#" class="nav-item active-series" data-tab="series"><i class="fa-solid fa-tv"></i><span>Series</span></a>
+      <a href="#" class="nav-item" data-tab="infantil"><i class="fa-solid fa-child"></i><span>Desenhos</span></a>
+      <a href="#" class="nav-item" data-tab="lista"><i class="fa-solid fa-heart"></i><span>Lista</span></a>
+    </nav>
+  </div>
+  <script>if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(s=>s.unregister()));}</script>
+  <script src="script.js?v=3.0"></script>
+</body>
+</html>
