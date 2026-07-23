@@ -1,0 +1,16 @@
+{
+  "name": "OIO TV v3.0 Beautiful - Layout da Print + Edges Reais",
+  "short_name": "OIO TV",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#080808",
+  "theme_color": "#080808",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/716/716603.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
