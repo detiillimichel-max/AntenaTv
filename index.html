@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OIO TV v5.0 — Mega-Catálogo Universal</title>
+  <title>OIO TV v5.1 — Mega-Catálogo Universal</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#080808">
-  <link rel="stylesheet" href="style.css?v=5.0">
+  <link rel="stylesheet" href="style.css?v=5.1">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
@@ -27,22 +27,22 @@
       <div class="hero-bg" id="hero-bg" style="background-image:url('https://peach.blender.org/wp-content/uploads/bbb-splash.png?x11217')"></div>
       <div class="hero-overlay"></div>
       <div class="hero-content">
-        <span class="badge">OIO TV v5.0 • DESTAQUE</span>
+        <span class="badge">OIO TV v5.1 • DESTAQUE</span>
         <h1 id="hero-title">Carregando Destaque...</h1>
-        <p id="hero-desc">Buscando os melhores conteúdos das 6 Edges: YouTube, TMDB, Facebook, Archive.org, PeerTube e Dailymotion.</p>
+        <p id="hero-desc">Buscando conteúdos das 5 Edges: YouTube, NASA, Archive.org, Twitch e PeerTube + Blender 4K.</p>
         <div class="hero-buttons">
           <button class="btn-primary" id="hero-play"><i class="fa-solid fa-play"></i> Assistir</button>
           <button class="btn-secondary" id="hero-info"><i class="fa-solid fa-circle-info"></i> Detalhes</button>
         </div>
       </div>
-      <div class="hero-status" id="hero-status">● 6 EDGES • CATÁLOGO DINÂMICO</div>
+      <div class="hero-status" id="hero-status">● 5 EDGES • CATÁLOGO DINÂMICO</div>
     </section>
 
     <!-- CONTAINER DE FILEIRAS DINÂMICAS -->
     <main class="content-rows" id="content-container">
       <div class="row" id="row-loading">
         <div class="row-header">
-          <h2>Carregando Catálogo OIO TV v5.0...</h2>
+          <h2>Carregando Catálogo OIO TV v5.1...</h2>
         </div>
         <div class="row-cards">
           <div class="card skeleton">
@@ -82,7 +82,7 @@
       </div>
     </div>
 
-    <!-- NAVEGAÇÃO INFERIOR — Tabs por categoria -->
+    <!-- NAVEGAÇÃO INFERIOR — Tabs por categoria (apenas Edges validadas) -->
     <nav class="bottom-nav">
       <a href="#" class="nav-item active" data-tab="home">
         <i class="fa-solid fa-house"></i><span>Home</span>
@@ -90,35 +90,29 @@
       <a href="#" class="nav-item" data-tab="filmes">
         <i class="fa-solid fa-film"></i><span>Filmes</span>
       </a>
-      <a href="#" class="nav-item" data-tab="series">
-        <i class="fa-solid fa-tv"></i><span>Séries</span>
-      </a>
-      <a href="#" class="nav-item" data-tab="series-novas">
-        <i class="fa-solid fa-fire"></i><span>Novas</span>
-      </a>
-      <a href="#" class="nav-item" data-tab="infantil">
-        <i class="fa-solid fa-child"></i><span>Infantil</span>
-      </a>
       <a href="#" class="nav-item" data-tab="desenhos">
         <i class="fa-solid fa-palette"></i><span>Desenhos</span>
       </a>
       <a href="#" class="nav-item" data-tab="desenhos-classicos">
         <i class="fa-solid fa-clapperboard"></i><span>Clássicos</span>
       </a>
-      <a href="#" class="nav-item" data-tab="futebol">
-        <i class="fa-solid fa-futbol"></i><span>Futebol</span>
+      <a href="#" class="nav-item" data-tab="musicas">
+        <i class="fa-solid fa-music"></i><span>Músicas</span>
       </a>
-      <a href="#" class="nav-item" data-tab="volei">
-        <i class="fa-solid fa-volleyball"></i><span>Vôlei</span>
+      <a href="#" class="nav-item" data-tab="nasa">
+        <i class="fa-solid fa-rocket"></i><span>NASA</span>
       </a>
-      <a href="#" class="nav-item" data-tab="basquete">
-        <i class="fa-solid fa-basketball"></i><span>Basquete</span>
+      <a href="#" class="nav-item" data-tab="twitch">
+        <i class="fa-brands fa-twitch"></i><span>Twitch</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="peertube">
+        <i class="fa-solid fa-globe"></i><span>PeerTube</span>
       </a>
     </nav>
   </div>
 
   <!-- Limpar Service Workers antigos para evitar cache stale -->
   <script>if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(s=>s.unregister()));}</script>
-  <script src="script.js?v=5.0"></script>
+  <script src="script.js?v=5.1"></script>
 </body>
 </html>

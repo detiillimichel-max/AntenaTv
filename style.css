@@ -1,5 +1,6 @@
 /* ============================================================
-   OIO TV v5.0 — STYLESHEET UNIVERSAL
+   OIO TV v5.1 — STYLESHEET UNIVERSAL (CORRIGIDO)
+   Glassmorphism preservado | Nav otimizada para 8 tabs
    ============================================================ */
 
 :root {
@@ -627,7 +628,7 @@ body {
 }
 
 /* ============================================================
-   RESPONSIVE — SMALL MOBILE (ajuste da nav com muitos itens)
+   RESPONSIVE — SMALL MOBILE (8 tabs na nav)
    ============================================================ */
 @media (max-width: 480px) {
   :root {

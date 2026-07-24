@@ -1,10 +1,7 @@
 // ============================================================
-// OIO TV v5.0 — MEGA-CATÁLOGO UNIVERSAL
-// Consume 6 Edge Functions do Supabase:
-//   YouTube | TMDB | Facebook | Internet Archive | PeerTube | Dailymotion
-// Categorias: Filmes, Lançamentos, Clássicos, Ação, Comédia, Romance,
-//             Documentários, Séries, Séries Novas, Infantil, Desenhos,
-//             Desenhos Clássicos, Esportes (Futebol, Vôlei, Basquete)
+// OIO TV v5.1 — Mega-Catálogo Universal (CORRIGIDO)
+// Promises isoladas | Renderização progressiva | Fallbacks garantidos
+// Edges validadas: youtube, nasa, archive, twitch, peertube + Blender
 // ============================================================
 
 const CONFIG = {
@@ -13,9 +10,16 @@ const CONFIG = {
 };
 
 let currentQueue = [], CURRENT_INDEX = 0;
+let heroSet = false;
+
+const container = document.getElementById("content-container");
+const heroBg = document.getElementById("hero-bg");
+const heroTitle = document.getElementById("hero-title");
+const heroDesc = document.getElementById("hero-desc");
+const heroPlay = document.getElementById("hero-play");
 
 // ============================================================
-// HELPER: Normaliza qualquer item de qualquer fonte em Card padrão
+// HELPER: Normaliza qualquer item em Card padrão
 // ============================================================
 const toCard = o => ({
   title: (o.title || "Sem título").slice(0, 40),
@@ -28,8 +32,7 @@ const toCard = o => ({
 });
 
 // ============================================================
-// COMUNICAÇÃO GENÉRICA COM EDGE FUNCTIONS
-// Suporta: youtube, tmdb, facebook, archive, peertube, dailymotion
+// COMUNICAÇÃO GENÉRICA COM EDGE FUNCTIONS (isolada com try/catch)
 // ============================================================
 async function fetchEdge(name, extra = "") {
   const url = `${CONFIG.SUPABASE_URL}/functions/v1/${name}${extra}`;
@@ -39,617 +42,47 @@ async function fetchEdge(name, extra = "") {
       "apikey": CONFIG.ANON_KEY,
       "Content-Type": "application/json"
     };
-    const method = (name === 'vapid' || name === 'gemini' || name === 'groq') ? 'POST' : 'GET';
-    let body = undefined;
-    if (name === 'vapid') body = JSON.stringify({ subscription: {} });
-    if (name === 'gemini' || name === 'groq') body = JSON.stringify({ message: "Olá" });
-
-    const res = await fetch(url, { headers, method, body });
-    if (!res.ok) throw new Error(res.status);
+    const res = await fetch(url, { headers, method: 'GET' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (e) {
-    console.warn(`Edge ${name} não respondeu ou indisponível:`, e);
+    console.warn(`Edge "${name}" indisponível:`, e.message);
     return null;
   }
 }
 
 // ============================================================
-// FALLBACK: Internet Archive (sem necessidade de Edge Function)
-// Busca direta na API pública do Archive.org para redundância
+// FALLBACK: Archive.org busca direta (sem Edge Function)
 // ============================================================
-async function fetchArchiveSearch(query, subtitle, source, rows = 10, fallback = []) {
-  let items = [];
+async function fetchArchiveSearch(query, subtitle, source, rows = 10) {
   try {
     const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&fl[]=title&sort[]=downloads+desc&rows=${rows}&page=1&output=json`;
     const res = await fetch(url);
+    if (!res.ok) return [];
     const data = await res.json();
     const docs = data.response?.docs || [];
-    for (const d of docs) {
-      if (!d.identifier) continue;
-      items.push(toCard({
-        title: (d.title || "Sem título").slice(0, 32),
-        subtitle,
-        poster: `https://archive.org/services/img/${d.identifier}`,
-        url: `https://archive.org/download/${d.identifier}/${d.identifier}.mp4`,
-        type: 'mp4',
-        source,
-        desc: "Conteúdo de domínio público disponibilizado pelo Internet Archive."
-      }));
-    }
-  } catch (e) { console.warn("Archive.org search falhou:", e); }
-  if (items.length === 0) items = fallback;
-  return items;
+    return docs.filter(d => d.identifier).map(d => toCard({
+      title: (d.title || "Sem título").slice(0, 32),
+      subtitle,
+      poster: `https://archive.org/services/img/${d.identifier}`,
+      url: `https://archive.org/download/${d.identifier}/${d.identifier}.mp4`,
+      type: 'mp4',
+      source,
+      desc: "Conteúdo de domínio público — Internet Archive."
+    }));
+  } catch { return []; }
 }
 
 // ============================================================
-// 1. YOUTUBE — Playlists por Gênero
-// ============================================================
-const YOUTUBE_PLAYLISTS = [
-  { id: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj", label: "Pop & Trending" },
-  { id: "PLFgquLnL59alW3xmYiWRaoz0oM3H17Lth", label: "MPB & Clássicos BR" },
-  { id: "PLcOF5jSj-KEmZgZUFvhK5PZY7Q56tG3n8", label: "Rock & Indie" }
-];
-
-async function getYoutubeContent() {
-  let videos = [];
-  for (const pl of YOUTUBE_PLAYLISTS) {
-    const edgeData = await fetchEdge("youtube", `?playlistId=${pl.id}`);
-    if (!edgeData?.items) continue;
-    for (const it of edgeData.items.slice(0, 8)) {
-      const vid = it.snippet?.resourceId?.videoId;
-      if (!vid) continue;
-      const t = it.snippet?.title || "";
-      if (t.toLowerCase().includes("private") || t.toLowerCase().includes("deleted")) continue;
-      videos.push(toCard({
-        title: t.slice(0, 35),
-        subtitle: `${pl.label} • YouTube HD`,
-        poster: it.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-        url: `https://www.youtube.com/embed/${vid}`,
-        type: 'embed',
-        source: "YouTube Edge",
-        desc: it.snippet?.description?.slice(0, 150) || ""
-      }));
-    }
-  }
-  return videos;
-}
-
-// ============================================================
-// 2. YOUTUBE — Busca por Query (Esportes, Desenhos, etc.)
-// ============================================================
-async function getYoutubeByQuery(query, label) {
-  let videos = [];
-  try {
-    const edgeData = await fetchEdge("youtube", `?q=${encodeURIComponent(query)}`);
-    if (!edgeData?.items) return [];
-    for (const it of edgeData.items.slice(0, 10)) {
-      const vid = it.snippet?.resourceId?.videoId;
-      if (!vid) continue;
-      const t = it.snippet?.title || "";
-      if (t.toLowerCase().includes("private") || t.toLowerCase().includes("deleted")) continue;
-      videos.push(toCard({
-        title: t.slice(0, 35),
-        subtitle: `${label} • YouTube`,
-        poster: it.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-        url: `https://www.youtube.com/embed/${vid}`,
-        type: 'embed',
-        source: "YouTube Edge",
-        desc: it.snippet?.description?.slice(0, 150) || ""
-      }));
-    }
-  } catch (e) { console.warn(`YouTube query '${query}' falhou:`, e); }
-  return videos;
-}
-
-// ============================================================
-// 3. TMDB — Filmes (Populares, Lançamentos, Gêneros)
-// ============================================================
-async function getTmdbMovies(endpoint, genreId = null, label = "TMDB") {
-  let items = [];
-  try {
-    let extra = `?category=${endpoint}`;
-    if (genreId) extra += `&genre=${genreId}`;
-    const edgeData = await fetchEdge("tmdb", extra);
-
-    // TMDB retorna array de resultados ou { results: [...] }
-    const results = Array.isArray(edgeData) ? edgeData : (edgeData?.results || []);
-    for (const r of results.slice(0, 12)) {
-      const title = r.title || r.original_title || "Sem título";
-      const posterBase = "https://image.tmdb.org/t/p/w500";
-      items.push(toCard({
-        title: title.slice(0, 38),
-        subtitle: `${label} • ${(r.release_date || '').slice(0, 4) || 'N/A'} • ★${(r.vote_average || 0).toFixed(1)}`,
-        poster: r.poster_path ? `${posterBase}${r.poster_path}` : `https://via.placeholder.com/400x600/1a1a2e/e94560?text=${encodeURIComponent(title.slice(0, 8))}`,
-        url: r.backdrop_path ? `https://www.themoviedb.org/movie/${r.id}` : "",
-        type: 'embed',
-        source: "TMDB Edge",
-        desc: r.overview?.slice(0, 180) || `${label} — Título popular.`
-      }));
-    }
-  } catch (e) { console.warn(`TMDB ${endpoint} falhou:`, e); }
-  return items;
-}
-
-// TMDB — Séries (Populares, Novas, Em alta)
-async function getTmdbSeries(endpoint = "popular", label = "TMDB Séries") {
-  let items = [];
-  try {
-    const edgeData = await fetchEdge("tmdb", `?category=tv_${endpoint}`);
-    const results = Array.isArray(edgeData) ? edgeData : (edgeData?.results || []);
-    for (const r of results.slice(0, 12)) {
-      const title = r.name || r.original_name || "Sem título";
-      const posterBase = "https://image.tmdb.org/t/p/w500";
-      items.push(toCard({
-        title: title.slice(0, 38),
-        subtitle: `${label} • ${(r.first_air_date || '').slice(0, 4) || 'N/A'} • ★${(r.vote_average || 0).toFixed(1)}`,
-        poster: r.poster_path ? `${posterBase}${r.poster_path}` : `https://via.placeholder.com/400x600/1a1a2e/e94560?text=${encodeURIComponent(title.slice(0, 8))}`,
-        url: r.backdrop_path ? `https://www.themoviedb.org/tv/${r.id}` : "",
-        type: 'embed',
-        source: "TMDB Edge",
-        desc: r.overview?.slice(0, 180) || `${label} — Série popular.`
-      }));
-    }
-  } catch (e) { console.warn(`TMDB séries ${endpoint} falhou:`, e); }
-  return items;
-}
-
-// ============================================================
-// 4. DAILYMOTION — Vídeos por Query
-// ============================================================
-async function getDailymotionContent(query, label, rows = 10) {
-  let items = [];
-  try {
-    const edgeData = await fetchEdge("dailymotion", `?q=${encodeURIComponent(query)}&limit=${rows}`);
-    const results = Array.isArray(edgeData) ? edgeData : (edgeData?.items || []);
-    for (const r of results.slice(0, rows)) {
-      const videoUrl = r.embed_url || r.url || r.link || "";
-      if (!videoUrl) continue;
-      items.push(toCard({
-        title: (r.title || r.name || "Sem título").slice(0, 35),
-        subtitle: `${label} • Dailymotion`,
-        poster: r.thumbnail_url || r.poster || r.thumbnail_medium_url || "",
-        url: videoUrl,
-        type: 'embed',
-        source: "Dailymotion Edge",
-        desc: (r.description || "").slice(0, 150)
-      }));
-    }
-  } catch (e) { console.warn(`Dailymotion '${query}' falhou:`, e); }
-  return items;
-}
-
-// ============================================================
-// 5. PEERTUBE — Vídeos por Instância/Query
-// ============================================================
-async function getPeertubeContent(query, label, rows = 10) {
-  let items = [];
-  try {
-    const edgeData = await fetchEdge("peertube", `?q=${encodeURIComponent(query)}&count=${rows}`);
-    const results = Array.isArray(edgeData) ? edgeData : (edgeData?.data || edgeData?.items || []);
-    for (const r of results.slice(0, rows)) {
-      const videoUrl = r.url || r.embed_url || "";
-      if (!videoUrl) continue;
-      items.push(toCard({
-        title: (r.name || r.title || "Sem título").slice(0, 35),
-        subtitle: `${label} • PeerTube`,
-        poster: r.thumbnail_path || r.thumbnail || r.thumbnailUrl || "",
-        url: videoUrl,
-        type: 'embed',
-        source: "PeerTube Edge",
-        desc: (r.description || "").slice(0, 150)
-      }));
-    }
-  } catch (e) { console.warn(`PeerTube '${query}' falhou:`, e); }
-  return items;
-}
-
-// ============================================================
-// 6. FACEBOOK — Vídeos Públicos
-// ============================================================
-async function getFacebookContent(query, label, rows = 10) {
-  let items = [];
-  try {
-    const edgeData = await fetchEdge("facebook", `?q=${encodeURIComponent(query)}&limit=${rows}`);
-    const results = Array.isArray(edgeData) ? edgeData : (edgeData?.data || []);
-    for (const r of results.slice(0, rows)) {
-      const videoUrl = r.video_url || r.source || r.embed_html || "";
-      if (!videoUrl) continue;
-      items.push(toCard({
-        title: (r.title || r.message || r.name || "Sem título").slice(0, 35),
-        subtitle: `${label} • Facebook`,
-        poster: r.thumbnail_url || r.picture || "",
-        url: videoUrl,
-        type: 'embed',
-        source: "Facebook Edge",
-        desc: (r.description || "").slice(0, 150)
-      }));
-    }
-  } catch (e) { console.warn(`Facebook '${query}' falhou:`, e); }
-  return items;
-}
-
-// ============================================================
-// 7. INTERNET ARCHIVE — Edge Function + Fallback direto
-// ============================================================
-async function getArchiveContent(query, label, rows = 10, fallback = []) {
-  let items = [];
-  // Primeiro tenta via Edge Function
-  try {
-    const edgeData = await fetchEdge("archive", `?q=${encodeURIComponent(query)}&rows=${rows}`);
-    const results = Array.isArray(edgeData) ? edgeData : (edgeData?.items || edgeData?.data || []);
-    for (const r of results.slice(0, rows)) {
-      const id = r.identifier || r.id;
-      if (!id) continue;
-      items.push(toCard({
-        title: (r.title || "Sem título").slice(0, 32),
-        subtitle: `${label} • Archive.org`,
-        poster: `https://archive.org/services/img/${id}`,
-        url: `https://archive.org/download/${id}/${id}.mp4`,
-        type: 'mp4',
-        source: "Archive Edge",
-        desc: "Conteúdo de domínio público — Internet Archive."
-      }));
-    }
-  } catch (e) { console.warn(`Archive Edge '${query}' falhou:`, e); }
-
-  // Fallback: busca direta no Archive.org
-  if (items.length === 0) {
-    items = await fetchArchiveSearch(query, label, "Archive.org", rows, fallback);
-  }
-  return items;
-}
-
-// ============================================================
-// 8. FILMES BLENDER (OPEN MOVIES) — Fallback fixo
-// ============================================================
-function getBlenderMovies() {
-  return [
-    toCard({ title: "Big Buck Bunny", subtitle: "Blender • 2008 • 4K", poster: "https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217", url: "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_640x360.m4v", type: "mp4", source: "Blender", desc: "Um coelho gigante e simpático enfrenta três valentões da floresta neste clássico do cinema aberto." }),
-    toCard({ title: "Sintel", subtitle: "Blender • Ação / Fantasia", poster: "https://durian.blender.org/wp-content/uploads/2010/05/sintel_poster.jpg", url: "https://download.blender.org/durian/trailer/sintel_trailer-1080p.mp4", type: "mp4", source: "Blender", desc: "Uma jovem guerreira embarca em uma jornada perigosa para resgatar seu pequeno dragão." }),
-    toCard({ title: "Tears of Steel", subtitle: "Blender • Sci-Fi Futurista", poster: "https://mango.blender.org/wp-content/uploads/2013/05/01_poster.jpg", url: "https://download.blender.org/mango/tears_of_steel_1080p.webm", type: "mp4", source: "Blender", desc: "Em um futuro distópico em Amsterdã, um grupo de rebeldes tenta salvar o planeta de robôs destruidores." }),
-    toCard({ title: "Caminandes 3: Llamigos", subtitle: "Blender • Comédia Infantil", poster: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400", url: "https://download.blender.org/caminandes/caminandes3/caminandes3_1080p.mp4", type: "mp4", source: "Blender", desc: "As aventuras hilárias de Kero, a lhama da Patagônia." }),
-    toCard({ title: "Cosmos Laundromat", subtitle: "Blender • Animação Sci-Fi", poster: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400", url: "https://download.blender.org/serials/cosmos_laundromat/cosmos_laundromat_1080p.mp4", type: "mp4", source: "Blender", desc: "Em uma ilha deserta, uma ovelha desiludida encontra um lavadeiro misterioso." })
-  ];
-}
-
-// ============================================================
-// 9. NASA — Documentários de Espaço
-// ============================================================
-async function getNasaCollection() {
-  let videos = [];
-  try {
-    const edgeData = await fetchEdge("archive", `?q=collection%3A%28NASA+OR+NASA_SVS%29&rows=8`);
-    const results = Array.isArray(edgeData) ? edgeData : (edgeData?.items || []);
-    for (const r of results.slice(0, 8)) {
-      const id = r.identifier || r.id;
-      if (!id) continue;
-      videos.push(toCard({
-        title: (r.title || "NASA Video").slice(0, 32),
-        subtitle: "NASA • 4K Space",
-        poster: `https://archive.org/services/img/${id}`,
-        url: `https://archive.org/download/${id}/${id}.mp4`,
-        type: 'mp4',
-        source: "NASA Archive",
-        desc: "Documentário científico direto do Internet Archive."
-      }));
-    }
-  } catch (e) { console.warn("NASA collection falhou:", e); }
-
-  // Fallback API NASA
-  if (videos.length < 10) {
-    for (const term of ["mars", "earth", "moon", "artemis"]) {
-      if (videos.length >= 10) break;
-      try {
-        const res = await fetch(`https://images-api.nasa.gov/search?q=${term}&media_type=video`);
-        const data = await res.json();
-        for (const it of (data.collection?.items || []).slice(0, 3)) {
-          const nasa_id = it.data?.[0]?.nasa_id;
-          if (!nasa_id) continue;
-          try {
-            const assetRes = await fetch(`https://images-api.nasa.gov/asset/${nasa_id}`);
-            const assetData = await assetRes.json();
-            const mp4 = (assetData.collection?.items || []).find(u => u.href.includes('~orig.mp4')) || (assetData.collection?.items || []).find(u => u.href.endsWith('.mp4'));
-            if (mp4?.href) {
-              videos.push(toCard({
-                title: (it.data[0].title || `Exploração ${term}`).slice(0, 32),
-                subtitle: `${term[0].toUpperCase() + term.slice(1)} • 4K`,
-                poster: it.links?.[0]?.href || "https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?w=400",
-                url: mp4.href,
-                type: 'mp4',
-                source: "NASA SVS",
-                desc: "Imagens e dados de exploração espacial."
-              }));
-            }
-          } catch {}
-        }
-      } catch {}
-    }
-  }
-  return videos;
-}
-
-// ============================================================
-// 10. DESSENHOS CLÁSSICOS — Fallback fixo
-// ============================================================
-function getClassicCartoons() {
-  return [
-    toCard({ title: "Popeye the Sailor", subtitle: "Archive • Clássico 1935", poster: "https://images.unsplash.com/photo-1563089145-599997674d42?w=400", url: "https://archive.org/download/popeye_ali_baba_and_forty_thieves/popeye_ali_baba_and_forty_thieves_512kb.mp4", type: "mp4", source: "Archive.org", desc: "Popeye em uma de suas maiores aventuras de domínio público." }),
-    toCard({ title: "Superman (1941)", subtitle: "Fleischer Studios", poster: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400", url: "https://archive.org/download/superman_1941/superman_1941_512kb.mp4", type: "mp4", source: "Archive.org", desc: "Primeira animação histórica do Homem de Aço." }),
-    toCard({ title: "Bugs Bunny — Rabbit Fire", subtitle: "Warner Bros • 1951", poster: "https://images.unsplash.com/photo-1535572290543-960a8046f5af?w=400", url: "https://archive.org/download/rabbitfire/rabbitfire_512kb.mp4", type: "mp4", source: "Archive.org", desc: "A famosa disputa entre Bugs Bunny e Elmer Fudd." }),
-    toCard({ title: "Betty Boop — Snow White", subtitle: "Fleischer • 1933", poster: "https://images.unsplash.com/photo-1513188060468-04e5377e64e8?w=400", url: "https://archive.org/download/bettyboopsnowwhite/bettyboopsnowwhite_512kb.mp4", type: "mp4", source: "Archive.org", desc: "Betty Boop protagoniza esta versão dos 7 Anões." }),
-    toCard({ title: "Felix the Cat", subtitle: "Silent Era • 1924", poster: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400", url: "https://archive.org/download/FelixTheCatInFelixTheCatMeetsSnowWhite/FelixTheCatInFelixTheCatMeetsSnowWhite_512kb.mp4", type: "mp4", source: "Archive.org", desc: "O icônico gato preto dos desenhos mudos dos anos 20." })
-  ];
-}
-
-// ============================================================
-// ============================================================
-// CONSTRUÇÃO DO CATÁLOGO PRINCIPAL — Todas as Categorias
-// ============================================================
-// ============================================================
-
-async function buildCatalog() {
-  const allCategories = [];
-
-  // ========================================================
-  // FILMES — Populares (TMDB + Dailymotion + Archive)
-  // ========================================================
-  const [tmdbPop, dailymotionMovies, archiveMovies] = await Promise.all([
-    getTmdbMovies("popular", null, "Filmes"),
-    getDailymotionContent("best movies 2024", "Filmes", 8),
-    getArchiveContent("collection:(feature_films)", "Filmes Clássicos", 8)
-  ]);
-  allCategories.push({
-    id: "filmes",
-    title: "🎬 Filmes — Populares & Clássicos",
-    badge: `${tmdbPop.length + dailymotionMovies.length + archiveMovies.length} TÍTULOS`,
-    items: [...tmdbPop, ...dailymotionMovies, ...archiveMovies].slice(0, 40)
-  });
-
-  // ========================================================
-  // LANÇAMENTOS — TMDB now_playing + Dailymotion novos
-  // ========================================================
-  const [tmdbNow, dailymotionNew] = await Promise.all([
-    getTmdbMovies("now_playing", null, "Lançamentos"),
-    getDailymotionContent("new movies 2025 2026", "Lançamentos", 8)
-  ]);
-  allCategories.push({
-    id: "lancamentos",
-    title: "🆕 Lançamentos — O Que Está em Cartaz",
-    badge: `${tmdbNow.length + dailymotionNew.length} TÍTULOS`,
-    items: [...tmdbNow, ...dailymotionNew].slice(0, 30)
-  });
-
-  // ========================================================
-  // CLÁSSICOS — Archive.org + PeerTube + Blender
-  // ========================================================
-  const [archiveClassicos, peertubeClassic, blenderList] = await Promise.all([
-    getArchiveContent('subject:"classic film" AND mediatype:(movies)', "Clássicos", 10, []),
-    getPeertubeContent("classic cinema vintage", "Clássicos", 6),
-    Promise.resolve(getBlenderMovies())
-  ]);
-  allCategories.push({
-    id: "classicos",
-    title: "🎥 Clássicos — Ouro do Cinema",
-    badge: `${archiveClassicos.length + peertubeClassic.length + blenderList.length} TÍTULOS`,
-    items: [...archiveClassicos, ...peertubeClassic, ...blenderList].slice(0, 30)
-  });
-
-  // ========================================================
-  // AÇÃO — TMDB genre 28 (Action) + Dailymotion + PeerTube
-  // ========================================================
-  const [tmdbAction, dailymotionAction, peertubeAction] = await Promise.all([
-    getTmdbMovies("popular", 28, "Ação"),
-    getDailymotionContent("best action movies fight scenes", "Ação", 8),
-    getPeertubeContent("action movies full", "Ação", 6)
-  ]);
-  allCategories.push({
-    id: "acao",
-    title: "💥 Ação — Adrenalina Pura",
-    badge: `${tmdbAction.length + dailymotionAction.length + peertubeAction.length} TÍTULOS`,
-    items: [...tmdbAction, ...dailymotionAction, ...peertubeAction].slice(0, 30)
-  });
-
-  // ========================================================
-  // COMÉDIA — TMDB genre 35 (Comedy) + Dailymotion + Archive
-  // ========================================================
-  const [tmdbComedy, dailymotionComedy, archiveComedy] = await Promise.all([
-    getTmdbMovies("popular", 35, "Comédia"),
-    getDailymotionContent("comedy movies funny", "Comédia", 8),
-    getArchiveContent('subject:"comedy" AND mediatype:(movies)', "Comédia", 6)
-  ]);
-  allCategories.push({
-    id: "comedia",
-    title: "😂 Comédia — Para Rir Muito",
-    badge: `${tmdbComedy.length + dailymotionComedy.length + archiveComedy.length} TÍTULOS`,
-    items: [...tmdbComedy, ...dailymotionComedy, ...archiveComedy].slice(0, 30)
-  });
-
-  // ========================================================
-  // ROMANCE — TMDB genre 10749 (Romance) + Dailymotion
-  // ========================================================
-  const [tmdbRomance, dailymotionRomance, archiveRomance] = await Promise.all([
-    getTmdbMovies("popular", 10749, "Romance"),
-    getDailymotionContent("romance movies love story", "Romance", 8),
-    getArchiveContent('subject:"romance" AND mediatype:(movies)', "Romance", 6)
-  ]);
-  allCategories.push({
-    id: "romance",
-    title: "❤️ Romance — Histórias de Amor",
-    badge: `${tmdbRomance.length + dailymotionRomance.length + archiveRomance.length} TÍTULOS`,
-    items: [...tmdbRomance, ...dailymotionRomance, ...archiveRomance].slice(0, 30)
-  });
-
-  // ========================================================
-  // DOCUMENTÁRIOS — NASA + Archive.org + PeerTube + Dailymotion
-  // ========================================================
-  const [nasaList, archiveDocs, peertubeDocs, dailymotionDocs] = await Promise.all([
-    getNasaCollection(),
-    getArchiveContent('collection:(prelinger)', "Documentários", 8),
-    getPeertubeContent("documentary full film", "Documentários", 6),
-    getDailymotionContent("documentary full movie", "Documentários", 6)
-  ]);
-  allCategories.push({
-    id: "documentarios",
-    title: "🌍 Documentários — Conhecimento Real",
-    badge: `${nasaList.length + archiveDocs.length + peertubeDocs.length + dailymotionDocs.length} TÍTULOS`,
-    items: [...nasaList, ...archiveDocs, ...peertubeDocs, ...dailymotionDocs].slice(0, 40)
-  });
-
-  // ========================================================
-  // SÉRIES — TMDB TV Popular
-  // ========================================================
-  const [tmdbSeries, dailymotionSeries, archiveSeries] = await Promise.all([
-    getTmdbSeries("popular", "Séries"),
-    getDailymotionContent("best series full episodes", "Séries", 8),
-    getArchiveContent('subject:"tv series" AND mediatype:(movies)', "Séries", 6)
-  ]);
-  allCategories.push({
-    id: "series",
-    title: "📺 Séries — Temporadas Completas",
-    badge: `${tmdbSeries.length + dailymotionSeries.length + archiveSeries.length} TÍTULOS`,
-    items: [...tmdbSeries, ...dailymotionSeries, ...archiveSeries].slice(0, 35)
-  });
-
-  // ========================================================
-  // SÉRIES NOVAS — TMDB TV On The Air / Trending
-  // ========================================================
-  const [tmdbNewSeries, dailymotionNewSeries, peertubeNewSeries] = await Promise.all([
-    getTmdbSeries("on_the_air", "Séries Novas"),
-    getDailymotionContent("new series 2025 2026", "Séries Novas", 8),
-    getPeertubeContent("new series web series", "Séries Novas", 6)
-  ]);
-  allCategories.push({
-    id: "series-novas",
-    title: "🔥 Séries Novas — Acabou de Estrear",
-    badge: `${tmdbNewSeries.length + dailymotionNewSeries.length + peertubeNewSeries.length} TÍTULOS`,
-    items: [...tmdbNewSeries, ...dailymotionNewSeries, ...peertubeNewSeries].slice(0, 30)
-  });
-
-  // ========================================================
-  // INFANTIL — YouTube Kids + Archive.org + PeerTube
-  // ========================================================
-  const [ytKids, archiveKids, peertubeKids, dailymotionKids] = await Promise.all([
-    getYoutubeByQuery("kids cartoons safe for children", "Infantil"),
-    getArchiveContent('subject:"children" AND mediatype:(movies)', "Infantil", 8),
-    getPeertubeContent("kids cartoons animation", "Infantil", 6),
-    getDailymotionContent("kids cartoons children safe", "Infantil", 6)
-  ]);
-  allCategories.push({
-    id: "infantil",
-    title: "👶 Infantil — Seguro para Crianças",
-    badge: `${ytKids.length + archiveKids.length + peertubeKids.length + dailymotionKids.length} TÍTULOS`,
-    items: [...ytKids, ...archiveKids, ...peertubeKids, ...dailymotionKids].slice(0, 40)
-  });
-
-  // ========================================================
-  // DESENHOS — YouTube + Archive.org + PeerTube
-  // ========================================================
-  const [ytDrawings, archiveDrawings, peertubeDrawings, dailymotionDrawings] = await Promise.all([
-    getYoutubeByQuery("animation short films cartoons", "Desenhos"),
-    getArchiveContent('subject:"animation" AND mediatype:(movies)', "Desenhos", 8),
-    getPeertubeContent("animation short film cartoons", "Desenhos", 6),
-    getDailymotionContent("animation short cartoons", "Desenhos", 6)
-  ]);
-  allCategories.push({
-    id: "desenhos",
-    title: "🎨 Desenhos — Animações & Curtas",
-    badge: `${ytDrawings.length + archiveDrawings.length + peertubeDrawings.length + dailymotionDrawings.length} TÍTULOS`,
-    items: [...ytDrawings, ...archiveDrawings, ...peertubeDrawings, ...dailymotionDrawings].slice(0, 40)
-  });
-
-  // ========================================================
-  // DESENHOS CLÁSSICOS — Archive.org + Fallback fixo
-  // ========================================================
-  const [archiveCartoons, ytCartoons, peertubeCartoons] = await Promise.all([
-    getArchiveContent('collection:(classic_cartoons)', "Desenhos Clássicos", 8, []),
-    getYoutubeByQuery("classic cartoons 1940s 1950s vintage", "Desenhos Clássicos"),
-    getPeertubeContent("classic cartoons vintage animation", "Desenhos Clássicos", 6)
-  ]);
-  const classicFallback = getClassicCartoons();
-  allCategories.push({
-    id: "desenhos-classicos",
-    title: "📽️ Desenhos Clássicos — Era de Ouro",
-    badge: `${archiveCartoons.length + ytCartoons.length + peertubeCartoons.length + classicFallback.length} TÍTULOS`,
-    items: [...archiveCartoons, ...ytCartoons, ...peertubeCartoons, ...classicFallback].slice(0, 35)
-  });
-
-  // ========================================================
-  // ESPORTES — FUTEVOL / VÔLEI / BASQUETE
-  // ========================================================
-  // Subcategorias de Esportes
-  const [ytFutebol, archiveFutebol, peertubeFutebol, dailymotionFutebol] = await Promise.all([
-    getYoutubeByQuery("futebol highlights gols melhores momentos", "Futebol"),
-    getArchiveContent('subject:"football" AND mediatype:(movies)', "Futebol", 6),
-    getPeertubeContent("soccer football highlights", "Futebol", 6),
-    getDailymotionContent("futebol highlights gols", "Futebol", 6)
-  ]);
-  allCategories.push({
-    id: "futebol",
-    title: "⚽ Futebol — Melhores Momentos & Gols",
-    badge: `${ytFutebol.length + archiveFutebol.length + peertubeFutebol.length + dailymotionFutebol.length} TÍTULOS`,
-    items: [...ytFutebol, ...archiveFutebol, ...peertubeFutebol, ...dailymotionFutebol].slice(0, 30)
-  });
-
-  const [ytVolei, archiveVolei, peertubeVolei, dailymotionVolei] = await Promise.all([
-    getYoutubeByQuery("volei highlights melhores jogadas vôlei", "Vôlei"),
-    getArchiveContent('subject:"volleyball" AND mediatype:(movies)', "Vôlei", 6),
-    getPeertubeContent("volleyball highlights best plays", "Vôlei", 6),
-    getDailymotionContent("volei voleibol melhores jogadas", "Vôlei", 6)
-  ]);
-  allCategories.push({
-    id: "volei",
-    title: "🏐 Vôlei — Jogadas Incríveis",
-    badge: `${ytVolei.length + archiveVolei.length + peertubeVolei.length + dailymotionVolei.length} TÍTULOS`,
-    items: [...ytVolei, ...archiveVolei, ...peertubeVolei, ...dailymotionVolei].slice(0, 25)
-  });
-
-  const [ytBasquete, archiveBasquete, peertubeBasquete, dailymotionBasquete] = await Promise.all([
-    getYoutubeByQuery("basketball highlights nba best plays", "Basquete"),
-    getArchiveContent('subject:"basketball" AND mediatype:(movies)', "Basquete", 6),
-    getPeertubeContent("basketball highlights nba", "Basquete", 6),
-    getDailymotionContent("basquete basketball highlights", "Basquete", 6)
-  ]);
-  allCategories.push({
-    id: "basquete",
-    title: "🏀 Basquete — Melhores Jogadas & NBA",
-    badge: `${ytBasquete.length + archiveBasquete.length + peertubeBasquete.length + dailymotionBasquete.length} TÍTULOS`,
-    items: [...ytBasquete, ...archiveBasquete, ...peertubeBasquete, ...dailymotionBasquete].slice(0, 30)
-  });
-
-  // ========================================================
-  // MÚSICAS & TRENDING — YouTube Edge
-  // ========================================================
-  const musicList = await getYoutubeContent();
-  if (musicList.length > 0) {
-    allCategories.push({
-      id: "musicas",
-      title: "🎵 Músicas & Clipes em Alta • YouTube Edge",
-      badge: `${musicList.length} VÍDEOS`,
-      items: musicList
-    });
-  }
-
-  // ========================================================
-  // FACEBOOK — Vídeos Virais / Trending
-  // ========================================================
-  const fbVideos = await getFacebookContent("viral videos trending", "Facebook Trending", 8);
-  if (fbVideos.length > 0) {
-    allCategories.push({
-      id: "facebook",
-      title: "📱 Facebook Trending — Vídeos Virais",
-      badge: `${fbVideos.length} VÍDEOS`,
-      items: fbVideos
-    });
-  }
-
-  return allCategories;
-}
-
-// ============================================================
-// RENDERIZADOR DINÂMICO DE FILEIRAS
+// RENDERIZADOR: Cria e injeta uma fileira no DOM imediatamente
+// (renderização progressiva — não espera todas as Edges)
 // ============================================================
 function createRowElement(id, title, badgeText, items) {
-  if (!items || items.length === 0) return null;
+  if (!items || items.length === 0) return;
+
+  // Remove skeleton de loading se existir
+  const loadingRow = document.getElementById("row-loading");
+  if (loadingRow) loadingRow.remove();
 
   const rowSection = document.createElement("div");
   rowSection.className = "row";
@@ -681,63 +114,344 @@ function createRowElement(id, title, badgeText, items) {
     cardsContainer.appendChild(card);
   });
 
-  return rowSection;
+  // Injeta dinamicamente no DOM (renderização progressiva)
+  container.appendChild(rowSection);
+
+  // Atualiza Hero com o primeiro item se ainda não definido
+  if (!heroSet && items.length > 0 && items[0].url) {
+    heroSet = true;
+    const h = items[0];
+    heroBg.style.backgroundImage = `url('${h.poster}')`;
+    heroTitle.textContent = h.title;
+    heroDesc.textContent = h.desc || h.subtitle;
+    heroPlay.onclick = () => openPlayerQueue(items, 0);
+  }
 }
 
 // ============================================================
-// INICIALIZAÇÃO DA APLICAÇÃO
+// FALLBACKS GARANTIDOS (conteúdo que NUNCA falha)
 // ============================================================
-document.addEventListener("DOMContentLoaded", async () => {
-  const container = document.getElementById("content-container");
+function getBlenderMovies() {
+  return [
+    toCard({ title: "Big Buck Bunny", subtitle: "Blender • 2008 • 4K", poster: "https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217", url: "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_640x360.m4v", type: "mp4", source: "Blender", desc: "Um coelho gigante e simpático enfrenta três valentões da floresta neste clássico do cinema aberto." }),
+    toCard({ title: "Sintel", subtitle: "Blender • Ação / Fantasia", poster: "https://durian.blender.org/wp-content/uploads/2010/05/sintel_poster.jpg", url: "https://download.blender.org/durian/trailer/sintel_trailer-1080p.mp4", type: "mp4", source: "Blender", desc: "Uma jovem guerreira embarca em uma jornada perigosa para resgatar seu pequeno dragão." }),
+    toCard({ title: "Tears of Steel", subtitle: "Blender • Sci-Fi Futurista", poster: "https://mango.blender.org/wp-content/uploads/2013/05/01_poster.jpg", url: "https://download.blender.org/mango/tears_of_steel_1080p.webm", type: "mp4", source: "Blender", desc: "Em um futuro distópico em Amsterdã, um grupo de rebeldes tenta salvar o planeta." }),
+    toCard({ title: "Caminandes 3: Llamigos", subtitle: "Blender • Comédia", poster: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400", url: "https://download.blender.org/caminandes/caminandes3/caminandes3_1080p.mp4", type: "mp4", source: "Blender", desc: "As aventuras hilárias de Kero, a lhama da Patagônia." }),
+    toCard({ title: "Cosmos Laundromat", subtitle: "Blender • Animação", poster: "https://images.unsplash.com/photo-1534447677768-be436bb09401?w=400", url: "https://download.blender.org/serials/cosmos_laundromat/cosmos_laundromat_1080p.mp4", type: "mp4", source: "Blender", desc: "Em uma ilha deserta, uma ovelha desiludida encontra um lavadeiro misterioso." })
+  ];
+}
 
-  // Exibe loading state
-  container.innerHTML = `
-    <div style="text-align:center;padding:60px;color:#666;">
-      <div style="font-size:2rem;margin-bottom:16px;">⏳</div>
-      <p>Carregando catálogo completo...</p>
-      <p style="font-size:0.85rem;color:#888;margin-top:8px;">Conectando: YouTube • TMDB • Facebook • Archive.org • PeerTube • Dailymotion</p>
-    </div>
-  `;
+function getClassicCartoons() {
+  return [
+    toCard({ title: "Popeye the Sailor", subtitle: "Archive • Clássico 1935", poster: "https://images.unsplash.com/photo-1563089145-599997674d42?w=400", url: "https://archive.org/download/popeye_ali_baba_and_forty_thieves/popeye_ali_baba_and_forty_thieves_512kb.mp4", type: "mp4", source: "Archive.org", desc: "Popeye em uma de suas maiores aventuras de domínio público." }),
+    toCard({ title: "Superman (1941)", subtitle: "Fleischer Studios", poster: "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=400", url: "https://archive.org/download/superman_1941/superman_1941_512kb.mp4", type: "mp4", source: "Archive.org", desc: "Primeira animação histórica do Homem de Aço." }),
+    toCard({ title: "Bugs Bunny — Rabbit Fire", subtitle: "Warner Bros • 1951", poster: "https://images.unsplash.com/photo-1535572290543-960a8046f5af?w=400", url: "https://archive.org/download/rabbitfire/rabbitfire_512kb.mp4", type: "mp4", source: "Archive.org", desc: "A famosa disputa entre Bugs Bunny e Elmer Fudd." }),
+    toCard({ title: "Betty Boop — Snow White", subtitle: "Fleischer • 1933", poster: "https://images.unsplash.com/photo-1513188060468-04e5377e64e8?w=400", url: "https://archive.org/download/bettyboopsnowwhite/bettyboopsnowwhite_512kb.mp4", type: "mp4", source: "Archive.org", desc: "Betty Boop protagoniza esta versão dos 7 Anões." }),
+    toCard({ title: "Felix the Cat", subtitle: "Silent Era • 1924", poster: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=400", url: "https://archive.org/download/FelixTheCatInFelixTheCatMeetsSnowWhite/FelixTheCatInFelixTheCatMeetsSnowWhite_512kb.mp4", type: "mp4", source: "Archive.org", desc: "O icônico gato preto dos desenhos mudos dos anos 20." })
+  ];
+}
 
+function getNasaFallback() {
+  return [
+    toCard({ title: "NASA: Mars Exploration", subtitle: "NASA SVS • 4K", poster: "https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?w=400", url: "https://svs.gsfc.nasa.gov/vis/a010000/a011000/a011050/mars_atmosphere_1080.mp4", type: "mp4", source: "NASA SVS", desc: "Exploração da atmosfera de Marte em alta definição." }),
+    toCard({ title: "NASA: Artemis Mission", subtitle: "NASA SVS • 4K", poster: "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400", url: "https://svs.gsfc.nasa.gov/vis/a010000/a011200/a011240/artemis_1080.mp4", type: "mp4", source: "NASA SVS", desc: "Documentário da missão Artemis de retorno à Lua." }),
+    toCard({ title: "NASA: Earth from Space", subtitle: "NASA ISS • 4K", poster: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400", url: "https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004898/earth_1080.mp4", type: "mp4", source: "NASA SVS", desc: "A Terra vista da Estação Espacial Internacional." }),
+    toCard({ title: "NASA: Solar System Tour", subtitle: "NASA SVS • HD", poster: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=400", url: "https://svs.gsfc.nasa.gov/vis/a000000/a004500/a004554/solar_system_1080.mp4", type: "mp4", source: "NASA SVS", desc: "Tour visual pelo nosso Sistema Solar." })
+  ];
+}
+
+function getTwitchFallback() {
+  return [
+    toCard({ title: "Twitch Gaming — Shroud", subtitle: "Twitch • Live", poster: "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400", url: "https://player.twitch.tv/?channel=shroud&parent=detiillimichel-max.github.io", type: 'embed', source: "Twitch", desc: "Live stream de gaming na Twitch." }),
+    toCard({ title: "Twitch Creative", subtitle: "Twitch • Live", poster: "https://images.unsplash.com/photo-1598550476439-6847785fcea6?w=400", url: "https://player.twitch.tv/?channel=artstation&parent=detiillimichel-max.github.io", type: 'embed', source: "Twitch", desc: "Canal criativo ao vivo na Twitch." })
+  ];
+}
+
+// ============================================================
+// EDGES VALIDADAS (200 OK) — Cada uma com try/catch individual
+// ============================================================
+
+// 1. YOUTUBE — Músicas e Clipes
+async function loadYoutube() {
   try {
-    const categories = await buildCatalog();
-
-    // Limpa loading
-    container.innerHTML = "";
-
-    // Determina o item de destaque para o Hero
-    const heroItem = categories.flatMap(c => c.items).find(i => i.url) || null;
-    if (heroItem) {
-      const heroBg = document.getElementById("hero-bg");
-      const heroTitle = document.getElementById("hero-title");
-      const heroDesc = document.getElementById("hero-desc");
-      const heroPlay = document.getElementById("hero-play");
-      if (heroBg) heroBg.style.backgroundImage = `url('${heroItem.poster}')`;
-      if (heroTitle) heroTitle.textContent = heroItem.title;
-      if (heroDesc) heroDesc.textContent = heroItem.desc || heroItem.subtitle;
-      if (heroPlay) heroPlay.onclick = () => openPlayerQueue([heroItem], 0);
+    const playlists = [
+      { id: "PLMC9KNkIncKtPzgY-5rmhvj7fax8fdxoj", label: "Pop & Trending" },
+      { id: "PLFgquLnL59alW3xmYiWRaoz0oM3H17Lth", label: "MPB & Clássicos BR" },
+      { id: "PLcOF5jSj-KEmZgZUFvhK5PZY7Q56tG3n8", label: "Rock & Indie" }
+    ];
+    let videos = [];
+    for (const pl of playlists) {
+      const edgeData = await fetchEdge("youtube", `?playlistId=${pl.id}`);
+      if (!edgeData?.items) continue;
+      for (const it of edgeData.items.slice(0, 8)) {
+        const vid = it.snippet?.resourceId?.videoId;
+        if (!vid) continue;
+        const t = it.snippet?.title || "";
+        if (t.toLowerCase().includes("private") || t.toLowerCase().includes("deleted")) continue;
+        videos.push(toCard({
+          title: t.slice(0, 35),
+          subtitle: `${pl.label} • YouTube HD`,
+          poster: it.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+          url: `https://www.youtube.com/embed/${vid}`,
+          type: 'embed',
+          source: "YouTube Edge",
+          desc: it.snippet?.description?.slice(0, 150) || ""
+        }));
+      }
     }
-
-    // Injeta todas as fileiras de categorias
-    for (const cat of categories) {
-      const rowEl = createRowElement(cat.id, cat.title, cat.badge, cat.items);
-      if (rowEl) container.appendChild(rowEl);
+    if (videos.length > 0) {
+      createRowElement("musicas", "🎵 Músicas & Clipes em Alta • YouTube", `${videos.length} VÍDEOS`, videos);
     }
-
-    // Resumo do catálogo
-    const totalCards = categories.reduce((sum, c) => sum + c.items.length, 0);
-    console.log(`OIO TV v5.0 — ${categories.length} categorias, ${totalCards} cards carregados.`);
-
   } catch (e) {
-    console.error("Erro ao carregar catálogo:", e);
-    container.innerHTML = `
-      <div style="text-align:center;padding:60px;color:#ff6b6b;">
-        <p style="font-size:1.2rem;">Erro ao carregar o catálogo.</p>
-        <p style="font-size:0.85rem;color:#888;">Verifique a conexão com as Edge Functions do Supabase.</p>
-      </div>
-    `;
+    console.warn("YouTube edge falhou (ignorado):", e.message);
+  }
+}
+
+// 2. NASA — Espaço e Documentários (Edge + Fallback)
+async function loadNasa() {
+  try {
+    const edgeData = await fetchEdge("nasa");
+    let videos = [];
+    if (edgeData?.data) {
+      for (const item of edgeData.data.slice(0, 6)) {
+        const href = item.href;
+        if (href && href.includes('collection.json')) {
+          try {
+            const colRes = await fetch(href);
+            const col = await colRes.json();
+            const mp4 = col.find(u => u.includes('~orig.mp4')) || col.find(u => u.endsWith('.mp4')) || col[0];
+            if (mp4) {
+              videos.push(toCard({
+                title: (item.data?.[0]?.title || item.title || "NASA Video").slice(0, 32),
+                subtitle: "NASA SVS • 4K Space",
+                poster: "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400",
+                url: mp4,
+                type: 'mp4',
+                source: "NASA Edge",
+                desc: "Documentário científico direto dos servidores da NASA."
+              }));
+            }
+          } catch {}
+        }
+      }
+    }
+    // Fallback garantido se Edge falhar ou retornar pouco
+    if (videos.length < 4) {
+      videos = [...videos, ...getNasaFallback()];
+    }
+    if (videos.length > 0) {
+      createRowElement("nasa", "🌍 Espaço & Documentários • NASA", `${videos.length} VÍDEOS`, videos);
+    }
+  } catch (e) {
+    // Fallback total se Edge falhar
+    console.warn("NASA edge falhou, usando fallback:", e.message);
+    const fallback = getNasaFallback();
+    if (fallback.length > 0) {
+      createRowElement("nasa", "🌍 Espaço & Documentários • NASA", `${fallback.length} VÍDEOS`, fallback);
+    }
+  }
+}
+
+// 3. ARCHIVE — Desenhos e Clássicos em .mp4 (Edge + Fallback direto)
+async function loadArchive() {
+  try {
+    const edgeData = await fetchEdge("archive", "?q=collection%3A%28classic_cartoons%29&rows=12");
+    let items = [];
+    if (Array.isArray(edgeData) && edgeData.length > 0) {
+      items = edgeData.slice(0, 10).map(r => toCard({
+        title: (r.title || "Sem título").slice(0, 32),
+        subtitle: "Desenhos Clássicos • Archive.org",
+        poster: `https://archive.org/services/img/${r.identifier || r.id}`,
+        url: `https://archive.org/download/${r.identifier || r.id}/${r.identifier || r.id}.mp4`,
+        type: 'mp4',
+        source: "Archive Edge",
+        desc: "Conteúdo de domínio público — Internet Archive."
+      }));
+    }
+    // Fallback direto no Archive.org
+    if (items.length < 4) {
+      const direct = await fetchArchiveSearch('collection:(classic_cartoons)', "Clássicos • Archive.org", "Archive.org", 8);
+      items = [...items, ...direct];
+    }
+    // Fallback estático garantido
+    if (items.length === 0) {
+      items = getClassicCartoons();
+    }
+    if (items.length > 0) {
+      createRowElement("archive", "📽️ Desenhos & Clássicos • Archive.org", `${items.length} TÍTULOS`, items);
+    }
+  } catch (e) {
+    console.warn("Archive edge falhou, usando fallback direto:", e.message);
+    const direct = await fetchArchiveSearch('collection:(classic_cartoons)', "Clássicos • Archive.org", "Archive.org", 10);
+    const items = direct.length > 0 ? direct : getClassicCartoons();
+    if (items.length > 0) {
+      createRowElement("archive", "📽️ Desenhos & Clássicos • Archive.org", `${items.length} TÍTULOS`, items);
+    }
+  }
+}
+
+// 4. TWITCH — Lives e Transmissões
+async function loadTwitch() {
+  try {
+    const edgeData = await fetchEdge("twitch");
+    let items = [];
+    if (Array.isArray(edgeData) && edgeData.length > 0) {
+      items = edgeData.slice(0, 10).map(r => toCard({
+        title: (r.title || r.channel_name || r.user_name || "Twitch Live").slice(0, 35),
+        subtitle: `${r.game_name || "Gaming"} • Twitch Live`,
+        poster: r.thumbnail_url || r.profile_image_url || "https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400",
+        url: `https://player.twitch.tv/?channel=${r.user_name || r.channel || 'shroud'}&parent=detiillimichel-max.github.io`,
+        type: 'embed',
+        source: "Twitch Edge",
+        desc: `Transmissão ao vivo de ${r.user_name || r.channel || "gaming"}.`
+      }));
+    }
+    // Fallback estático
+    if (items.length === 0) {
+      items = getTwitchFallback();
+    }
+    if (items.length > 0) {
+      createRowElement("twitch", "🎮 Lives & Transmissões • Twitch", `${items.length} CANAIS`, items);
+    }
+  } catch (e) {
+    console.warn("Twitch edge falhou, usando fallback:", e.message);
+    const items = getTwitchFallback();
+    if (items.length > 0) {
+      createRowElement("twitch", "🎮 Lives & Transmissões • Twitch", `${items.length} CANAIS`, items);
+    }
+  }
+}
+
+// 5. PEERTUBE — Conteúdos da Rede PeerTube
+async function loadPeertube() {
+  try {
+    const edgeData = await fetchEdge("peertube", "?q=best+documentaries&count=10");
+    let items = [];
+    if (edgeData) {
+      const results = Array.isArray(edgeData) ? edgeData : (edgeData?.data || edgeData?.items || []);
+      for (const r of results.slice(0, 10)) {
+        const videoUrl = r.url || r.embed_url || "";
+        if (!videoUrl) continue;
+        items.push(toCard({
+          title: (r.name || r.title || "Sem título").slice(0, 35),
+          subtitle: "PeerTube • Full Film",
+          poster: r.thumbnail_path || r.thumbnail || "",
+          url: videoUrl,
+          type: 'embed',
+          source: "PeerTube Edge",
+          desc: (r.description || "").slice(0, 150)
+        }));
+      }
+    }
+    // Fallback: busca direta na API pública do PeerTube
+    if (items.length < 4) {
+      try {
+        const peertubeRes = await fetch("https://framatube.org/api/v1/videos?count=10&sort=-createdAt&skip=0");
+        const peertubeData = await peertubeRes.json();
+        for (const v of (peertubeData.data || []).slice(0, 8)) {
+          items.push(toCard({
+            title: (v.name || "Sem título").slice(0, 35),
+            subtitle: "PeerTube • Documentário",
+            poster: v.thumbnailPath || "",
+            url: `https://framatube.org/videos/embed/${v.uuid}`,
+            type: 'embed',
+            source: "PeerTube Direct",
+            desc: (v.description || "").slice(0, 150)
+          }));
+        }
+      } catch {}
+    }
+    if (items.length > 0) {
+      createRowElement("peertube", "🌐 Conteúdos • PeerTube", `${items.length} VÍDEOS`, items);
+    }
+  } catch (e) {
+    console.warn("PeerTube edge falhou, usando fallback direto:", e.message);
+    try {
+      const peertubeRes = await fetch("https://framatube.org/api/v1/videos?count=10&sort=-createdAt&skip=0");
+      const peertubeData = await peertubeRes.json();
+      const items = (peertubeData.data || []).slice(0, 8).map(v => toCard({
+        title: (v.name || "Sem título").slice(0, 35),
+        subtitle: "PeerTube • Documentário",
+        poster: v.thumbnailPath || "",
+        url: `https://framatube.org/videos/embed/${v.uuid}`,
+        type: 'embed',
+        source: "PeerTube Direct",
+        desc: (v.description || "").slice(0, 150)
+      }));
+      if (items.length > 0) {
+        createRowElement("peertube", "🌐 Conteúdos • PeerTube", `${items.length} VÍDEOS`, items);
+      }
+    } catch {
+      console.warn("PeerTube fallback direto também falhou (ignorado).");
+    }
+  }
+}
+
+// 6. BLENDER — Filmes 4K (estático, nunca falha)
+async function loadBlender() {
+  try {
+    const items = getBlenderMovies();
+    createRowElement("blender", "🎬 Filmes 4K • Blender Foundation", `${items.length} .MP4 DIRETO`, items);
+  } catch (e) {
+    console.warn("Blender fallback falhou (impossível, mas tratado):", e.message);
+  }
+}
+
+// ============================================================
+// ORQUESTRADOR: Carrega tudo de forma isolada e independente
+// Cada Edge Function roda em paralelo, renderiza imediatamente
+// quando pronta, e NUNCA trava se outra falhar
+// ============================================================
+async function initCatalog() {
+  // Todas as Edges validadas rodam em paralelo com Promise.allSettled
+  // Nenhuma falha bloqueia as outras
+  await Promise.allSettled([
+    loadYoutube(),
+    loadNasa(),
+    loadArchive(),
+    loadTwitch(),
+    loadPeertube(),
+    loadBlender()
+  ]);
+
+  console.log("OIO TV v5.1 — Todas as Edges processadas.");
+
+  // Garantir que pelo menos Blender está presente (nunca falha)
+  if (!document.getElementById("row-blender")) {
+    const items = getBlenderMovies();
+    createRowElement("blender", "🎬 Filmes 4K • Blender Foundation", `${items.length} .MP4 DIRETO`, items);
   }
 
+  // Garantir que Hero foi setado
+  if (!heroSet) {
+    const firstRow = container.querySelector(".row");
+    if (firstRow) {
+      const firstCard = firstRow.querySelector(".card");
+      if (firstCard) {
+        heroSet = true;
+        const h = {
+          title: firstCard.querySelector(".card-title")?.textContent || "",
+          subtitle: firstCard.querySelector(".card-subtitle")?.textContent || "",
+          poster: firstCard.querySelector("img")?.src || "",
+          url: "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_640x360.m4v",
+          desc: "Filme 4K da Blender Foundation."
+        };
+        heroBg.style.backgroundImage = `url('${h.poster}')`;
+        heroTitle.textContent = h.title;
+        heroDesc.textContent = h.desc;
+        heroPlay.onclick = () => openPlayer(blenderFallback);
+      }
+    }
+  }
+}
+
+const blenderFallback = getBlenderMovies()[0];
+
+// ============================================================
+// INICIALIZAÇÃO
+// ============================================================
+document.addEventListener("DOMContentLoaded", () => {
+  initCatalog();
   setupModal();
   setupNavigation();
 });
@@ -764,7 +478,8 @@ function openPlayer(item) {
     <span style="color:#4ade80">● REPRODUZINDO</span>
   `;
 
-  if (item.type === 'mp4' || item.url.match(/\.mp4|\.webm|\.m4v/)) {
+  if (item.type === 'mp4' || item.url?.match(/\.mp4|\.webm|\.m4v/)) {
+    // Vídeo direto (NASA, Archive, Blender)
     playerWrap.innerHTML = `
       <video id="active-video-player" controls autoplay playsinline preload="auto"
         style="width:100%;height:100%;object-fit:contain;background:#000"
@@ -776,12 +491,13 @@ function openPlayer(item) {
     if (videoEl) {
       videoEl.play().catch(err => console.warn("Autoplay aguardando clique:", err));
       videoEl.onerror = () => {
-        console.warn("Link de vídeo direto falhou, acionando fallback...");
+        console.warn("Link direto falhou, acionando fallback Blender...");
         videoEl.src = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_640x360.m4v";
         videoEl.play().catch(() => {});
       };
     }
   } else {
+    // Embed (YouTube, Twitch, PeerTube)
     let embedUrl = item.url;
     if (!embedUrl.includes('autoplay=1')) {
       embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'autoplay=1';
@@ -809,18 +525,26 @@ function setupModal() {
 }
 
 // ============================================================
-// NAVEGAÇÃO INFERIOR (Bottom Nav)
+// NAVEGAÇÃO INFERIOR (Bottom Nav) — Com verificação de segurança
 // ============================================================
 function setupNavigation() {
   const navMap = {
     home: null,
-    filmes: "row-filmes",
-    series: "row-series",
-    desenhos: "row-desenhos",
-    desenhos-classicos: "row-desenhos-classicos",
-    esportes: "row-futebol",
-    futebol: "row-futebol",
-    infantil: "row-infantil"
+    filmes: "row-blender",
+    series: null,
+    "series-novas": null,
+    infantil: null,
+    desenhos: "row-archive",
+    "desenhos-classicos": "row-archive",
+    futebol: null,
+    volei: null,
+    basquete: null,
+    musicas: "row-musicas",
+    nasa: "row-nasa",
+    archive: "row-archive",
+    twitch: "row-twitch",
+    peertube: "row-peertube",
+    blender: "row-blender"
   };
 
   document.querySelectorAll(".bottom-nav .nav-item").forEach(item => {
@@ -829,12 +553,23 @@ function setupNavigation() {
       document.querySelectorAll(".bottom-nav .nav-item").forEach(i => i.classList.remove("active"));
       item.classList.add("active");
 
-      const tab = item.dataset.tab || item.dataset.category;
+      const tab = item.dataset.tab;
       const targetId = navMap[tab];
-      if (targetId) {
-        document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth' });
-      } else if (tab === 'home') {
+
+      // Verificação de segurança: se a fileira não existe, scroll para topo
+      if (tab === 'home') {
         window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else if (targetId) {
+        const target = document.getElementById(targetId);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          // Fileira ainda não existe, scroll suave para cima
+          window.scrollTo({ top: 200, behavior: 'smooth' });
+        }
+      } else {
+        // Tab sem row mapeada, scroll para o topo
+        window.scrollTo({ top: 200, behavior: 'smooth' });
       }
     };
   });
