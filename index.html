@@ -3,49 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OIO TV - Catálogo Expandido</title>
+  <title>OIO TV v5.0 — Mega-Catálogo Universal</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#080808">
-  <link rel="stylesheet" href="style.css?v=3.0">
+  <link rel="stylesheet" href="style.css?v=5.0">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <div id="app">
+
+    <!-- HEADER / NAVBAR -->
     <header class="navbar">
       <div class="logo"><i class="fa-solid fa-play"></i> OIO TV</div>
       <div class="nav-actions">
-        <button id="btn-search"><i class="fa-solid fa-magnifying-glass"></i></button>
-        <button id="btn-profile"><i class="fa-solid fa-circle-user"></i></button>
+        <button id="btn-search" title="Buscar"><i class="fa-solid fa-magnifying-glass"></i></button>
+        <button id="btn-profile" title="Perfil"><i class="fa-solid fa-circle-user"></i></button>
       </div>
     </header>
 
-    <!-- HERO DESTAQUE -->
+    <!-- HERO DESTAQUE PRINCIPAL -->
     <section id="hero" class="hero">
       <div class="hero-bg" id="hero-bg" style="background-image:url('https://peach.blender.org/wp-content/uploads/bbb-splash.png?x11217')"></div>
       <div class="hero-overlay"></div>
       <div class="hero-content">
-        <span class="badge">OIO ORIGINALS • DESTAQUE</span>
+        <span class="badge">OIO TV v5.0 • DESTAQUE</span>
         <h1 id="hero-title">Carregando Destaque...</h1>
-        <p id="hero-desc">Buscando os melhores conteúdos das Edges e APIs públicas.</p>
+        <p id="hero-desc">Buscando os melhores conteúdos das 6 Edges: YouTube, TMDB, Facebook, Archive.org, PeerTube e Dailymotion.</p>
         <div class="hero-buttons">
           <button class="btn-primary" id="hero-play"><i class="fa-solid fa-play"></i> Assistir</button>
           <button class="btn-secondary" id="hero-info"><i class="fa-solid fa-circle-info"></i> Detalhes</button>
         </div>
       </div>
-      <div class="hero-status" id="hero-status">● CATÁLOGO DINÂMICO • EDGES REAIS</div>
+      <div class="hero-status" id="hero-status">● 6 EDGES • CATÁLOGO DINÂMICO</div>
     </section>
 
-    <!-- CONTAINER DE FILEIRAS (GERADO DINAMICAMENTE) -->
+    <!-- CONTAINER DE FILEIRAS DINÂMICAS -->
     <main class="content-rows" id="content-container">
       <div class="row" id="row-loading">
         <div class="row-header">
-          <h2>Carregando Catálogo OIO TV...</h2>
+          <h2>Carregando Catálogo OIO TV v5.0...</h2>
         </div>
         <div class="row-cards">
-          <div class="card skeleton"><div class="card-img-wrap skeleton-img"></div><div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div></div>
-          <div class="card skeleton"><div class="card-img-wrap skeleton-img"></div><div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div></div>
-          <div class="card skeleton"><div class="card-img-wrap skeleton-img"></div><div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div></div>
+          <div class="card skeleton">
+            <div class="card-img-wrap skeleton-img"></div>
+            <div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div>
+          </div>
+          <div class="card skeleton">
+            <div class="card-img-wrap skeleton-img"></div>
+            <div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div>
+          </div>
+          <div class="card skeleton">
+            <div class="card-img-wrap skeleton-img"></div>
+            <div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div>
+          </div>
+          <div class="card skeleton">
+            <div class="card-img-wrap skeleton-img"></div>
+            <div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div>
+          </div>
+          <div class="card skeleton">
+            <div class="card-img-wrap skeleton-img"></div>
+            <div class="card-body"><div class="sk-line"></div><div class="sk-line small"></div></div>
+          </div>
         </div>
       </div>
     </main>
@@ -53,7 +72,7 @@
     <!-- MODAL DE REPRODUÇÃO -->
     <div id="player-modal" class="modal hidden">
       <div class="modal-content">
-        <button id="modal-close"><i class="fa-solid fa-xmark"></i></button>
+        <button id="modal-close" title="Fechar"><i class="fa-solid fa-xmark"></i></button>
         <div class="player-wrapper" id="player-container"></div>
         <div class="modal-info">
           <h2 id="modal-title"></h2>
@@ -63,18 +82,43 @@
       </div>
     </div>
 
-    <!-- NAVEGAÇÃO INFERIOR -->
+    <!-- NAVEGAÇÃO INFERIOR — Tabs por categoria -->
     <nav class="bottom-nav">
-      <a href="#" class="nav-item active" data-tab="home"><i class="fa-solid fa-house"></i><span>Home</span></a>
-      <a href="#" class="nav-item" data-tab="filmes"><i class="fa-solid fa-film"></i><span>Filmes</span></a>
-      <a href="#" class="nav-item" data-tab="series"><i class="fa-solid fa-tv"></i><span>Séries</span></a>
-      <a href="#" class="nav-item" data-tab="infantil"><i class="fa-solid fa-child"></i><span>Desenhos</span></a>
-      <a href="#" class="nav-item" data-tab="lista"><i class="fa-solid fa-heart"></i><span>Lista</span></a>
+      <a href="#" class="nav-item active" data-tab="home">
+        <i class="fa-solid fa-house"></i><span>Home</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="filmes">
+        <i class="fa-solid fa-film"></i><span>Filmes</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="series">
+        <i class="fa-solid fa-tv"></i><span>Séries</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="series-novas">
+        <i class="fa-solid fa-fire"></i><span>Novas</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="infantil">
+        <i class="fa-solid fa-child"></i><span>Infantil</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="desenhos">
+        <i class="fa-solid fa-palette"></i><span>Desenhos</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="desenhos-classicos">
+        <i class="fa-solid fa-clapperboard"></i><span>Clássicos</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="futebol">
+        <i class="fa-solid fa-futbol"></i><span>Futebol</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="volei">
+        <i class="fa-solid fa-volleyball"></i><span>Vôlei</span>
+      </a>
+      <a href="#" class="nav-item" data-tab="basquete">
+        <i class="fa-solid fa-basketball"></i><span>Basquete</span>
+      </a>
     </nav>
   </div>
 
+  <!-- Limpar Service Workers antigos para evitar cache stale -->
   <script>if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(r=>r.forEach(s=>s.unregister()));}</script>
-  <script src="script.js?v=3.1"></script>
+  <script src="script.js?v=5.0"></script>
 </body>
 </html>
-

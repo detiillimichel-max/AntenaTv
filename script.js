@@ -209,7 +209,7 @@ async function getDailymotionContent(query, label, rows = 10) {
         subtitle: `${label} • Dailymotion`,
         poster: r.thumbnail_url || r.poster || r.thumbnail_medium_url || "",
         url: videoUrl,
-                type: 'embed',
+        type: 'embed',
         source: "Dailymotion Edge",
         desc: (r.description || "").slice(0, 150)
       }));
@@ -419,7 +419,7 @@ async function buildCatalog() {
     items: [...tmdbNow, ...dailymotionNew].slice(0, 30)
   });
 
-   // ========================================================
+  // ========================================================
   // CLÁSSICOS — Archive.org + PeerTube + Blender
   // ========================================================
   const [archiveClassicos, peertubeClassic, blenderList] = await Promise.all([
@@ -839,5 +839,3 @@ function setupNavigation() {
     };
   });
 }
-
-    
