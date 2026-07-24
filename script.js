@@ -11,7 +11,7 @@ const toCard = o => ({
   subtitle: (o.subtitle||o.source||"HD").slice(0,32),
   poster: o.poster || `https://via.placeholder.com/400x600/151515/fff?text=${encodeURIComponent((o.title||"OIO").slice(0,8))}`,
   url: o.url,
-  type: o.url?.match(/\.mp4|\.webm|\.m4v/) ? 'mp4' : 'embed',
+  type: o.type || (o.url?.match(/\.mp4|\.webm|\.m4v/) ? 'mp4' : 'embed'),
   source: o.source||"Edge",
   desc: (o.desc||o.subtitle||"").slice(0,180),
   raw: o
@@ -21,11 +21,16 @@ async function fetchEdge(name, extra=""){
   const url = `${CONFIG.SUPABASE_URL}/functions/v1/${name}${extra}`;
   try{
     const headers = {"Authorization":`Bearer ${CONFIG.ANON_KEY}`,"apikey":CONFIG.ANON_KEY,"Content-Type":"application/json"};
-    const res = await fetch(url, {headers, method: name==='vapid'||name==='gemini'||name==='groq' ? 'POST' : 'GET', body: (name==='vapid'?JSON.stringify({subscription:{}}): name==='gemini'?JSON.stringify({message:"Olá"}): name==='groq'?JSON.stringify({message:"Olá"}): undefined)});
-    if(!res.ok) throw new Error(status);
+    const method = (name==='vapid'||name==='gemini'||name==='groq') ? 'POST' : 'GET';
+    let body = undefined;
+    if(name==='vapid') body = JSON.stringify({subscription:{}});
+    if(name==='gemini'||name==='groq') body = JSON.stringify({message:"Olá"});
+
+    const res = await fetch(url, {headers, method, body});
+    if(!res.ok) throw new Error(res.status);
     return await res.json();
   }catch(e){
-    console.warn(`Edge ${name} falhou`, e);
+    console.warn(`Edge ${name} falhou:`, e);
     return null;
   }
 }
@@ -33,7 +38,7 @@ async function fetchEdge(name, extra=""){
 // Parser NASA Edge + Public API
 async function getNasaContent(){
   let videos=[];
-  // 1. Tenta sua Edge NASA
+  // 1. Tenta Edge NASA
   const edgeData = await fetchEdge("nasa");
   if(edgeData?.data){
     for(const item of edgeData.data.slice(0,6)){
@@ -44,10 +49,8 @@ async function getNasaContent(){
           const col = await colRes.json();
           const mp4 = col.find(u=>u.includes('~orig.mp4')) || col.find(u=>u.endsWith('.mp4')) || col[0];
           if(mp4){
-            // Pega imagem real do NASA se tiver
             let poster = "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400";
             try{
-              // Tenta pegar thumbnail do mesmo path
               const thumb = href.replace('collection.json','').replace('video/','thumb/') + 'thumb.jpg';
               poster = thumb;
             }catch{}
@@ -57,14 +60,14 @@ async function getNasaContent(){
               poster,
               url: mp4,
               source: "NASA SVS",
-              desc: "Video real NASA extraido via sua Edge NASA - .mp4 direto"
+              desc: "Vídeo real NASA extraído via Edge NASA - .mp4 direto"
             }));
           }
         }catch{}
       }
     }
   }
-  // 2. Fallback API Pública NASA (se Edge não retornou 5)
+  // 2. Fallback API Pública NASA
   if(videos.length<5){
     try{
       const res = await fetch("https://images-api.nasa.gov/search?q=black%20hole&media_type=video");
@@ -83,7 +86,7 @@ async function getNasaContent(){
               poster: it.links?.[0]?.href || "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=400",
               url: mp4.href,
               source: "NASA SVS",
-              desc: "Video real NASA API pública - .mp4 direto"
+              desc: "Vídeo real NASA API pública - .mp4 direto"
             }));
           }
         }catch{}
@@ -113,7 +116,7 @@ async function getYoutubeContent(){
       }));
     }
   }
-  // Fallback público Blender (igual sua print tinha Big Buck Bunny)
+  // Fallback público Blender (Big Buck Bunny e Sintel)
   if(videos.length<3){
     videos = videos.concat([
       toCard({title:"Big Buck Bunny",subtitle:"Blender • 2008 • 4K",poster:"https://peach.blender.org/wp-content/uploads/title_anouncement.jpg?x11217",url:"https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_640x360.m4v",source:"Blender",desc:"Open movie Blender"}),
@@ -125,8 +128,7 @@ async function getYoutubeContent(){
 
 async function getArchiveAndPeerTube(){
   let videos=[];
-  // Tenta PeerTube Edge
-  const ptData = await fetchEdge("PeerTube");
+  const ptData = await fetchEdge("peertube");
   if(ptData?.data){
     for(const v of ptData.data.slice(0,3)){
       videos.push(toCard({
@@ -134,12 +136,12 @@ async function getArchiveAndPeerTube(){
         subtitle: "PeerTube • Edge",
         poster: v.thumbnailPath ? `https://framatube.org${v.thumbnailPath}` : "https://images.unsplash.com/photo-1611224923853-80b023f02d71?w=400",
         url: `https://framatube.org/videos/embed/${v.uuid||v.shortUUID}`,
+        type: 'embed',
         source: "PeerTube Edge",
         desc: v.uuid||""
       }));
     }
   }
-  // Fallback Blender + Archive
   videos = videos.concat([
     toCard({title:"Tears of Steel",subtitle:"Blender • Sci-Fi • 4K",poster:"https://mango.blender.org/wp-content/uploads/2013/05/01_poster.jpg",url:"https://download.blender.org/mango/tears_of_steel_1080p.webm",source:"Blender",desc:"Sci-fi"}),
     toCard({title:"Caminandes",subtitle:"Blender • Curta",poster:"https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=400",url:"https://download.blender.org/caminandes/caminandes3/caminandes3_1080p.mp4",source:"Blender",desc:"Curta"})
@@ -154,14 +156,12 @@ document.addEventListener("DOMContentLoaded", async ()=>{
   const status = document.getElementById("hero-status");
   const countNasa = document.getElementById("row-count-nasa");
 
-  // Carrega tudo em paralelo
   const [nasaVideos, youtubeVideos, archiveVideos] = await Promise.all([
     getNasaContent(),
     getYoutubeContent(),
     getArchiveAndPeerTube()
   ]);
 
-  // Hero = primeiro do YouTube Edge (igual sua print Big Buck Bunny) ou NASA
   const heroItem = youtubeVideos[0] || nasaVideos[0];
   if(heroItem){
     heroBg.style.backgroundImage = `url('${heroItem.poster}')`;
@@ -170,7 +170,6 @@ document.addEventListener("DOMContentLoaded", async ()=>{
     document.getElementById("hero-play").onclick = () => openPlayerQueue([heroItem],0);
   }
 
-  // Fileira NASA + TED = igual sua print com 11 • .MP4 DIRETO
   const combinedNasa = [...nasaVideos, ...youtubeVideos.filter(v=>v.source.includes("YouTube")).slice(0,3)];
   const finalNasa = combinedNasa.slice(0,11);
   if(countNasa) countNasa.textContent = `${finalNasa.length} • .MP4 DIRETO`;
@@ -196,33 +195,68 @@ function renderCards(containerId, items){
   });
 }
 
-let currentQueue=[],CURRENT_INDEX=0;
 function openPlayerQueue(q,s){currentQueue=q;CURRENT_INDEX=s;openPlayer(currentQueue[CURRENT_INDEX]);}
+
 function openPlayer(item){
- if(!item) return;
- const modal=document.getElementById("player-modal"); const c=document.getElementById("player-container");
- document.getElementById("modal-title").innerText=item.title;
- document.getElementById("modal-desc").innerText=item.desc||item.subtitle;
- document.getElementById("player-meta").innerHTML=`<span>${item.source}</span><span>${(item.type||'MP4').toUpperCase()}</span><span style="color:#4ade80">● .MP4 DIRETO</span>`;
- if(item.type==='mp4'||item.url.match(/\.mp4|\.webm|\.m4v/)){
-  c.innerHTML=`<video controls autoplay playsinline style="width:100%;height:100%;object-fit:contain;background:#000" src="${item.url}" poster="${item.poster}"></video>`;
- }else{
-  c.innerHTML=`<iframe src="${item.url}?autoplay=1" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`;
- }
- modal.classList.remove("hidden");
-}
-function setupModal(){const m=document.getElementById("player-modal");const b=document.getElementById("modal-close");b.onclick=()=>{m.classList.add("hidden");document.getElementById("player-container").innerHTML="";};m.onclick=e=>{if(e.target===m) b.click();};}
-function setupNavigation(){
- const container=document.getElementById("content-container");
- document.querySelectorAll(".bottom-nav .nav-item").forEach(item=>{
-  item.onclick=e=>{
-   e.preventDefault();
-   document.querySelectorAll(".bottom-nav .nav-item").forEach(i=>i.classList.remove("active"));
-   item.classList.add("active");
-   if(item.dataset.tab==='series') document.getElementById("row-nasa").scrollIntoView({behavior:'smooth'});
-   if(item.dataset.tab==='filmes') document.getElementById("row-youtube").scrollIntoView({behavior:'smooth'});
-   if(item.dataset.tab==='infantil') document.getElementById("row-archive").scrollIntoView({behavior:'smooth'});
-  };
- });
+  if(!item) return;
+  const modal = document.getElementById("player-modal");
+  const container = document.getElementById("player-container");
+  
+  document.getElementById("modal-titleinnerText" in document.getElementById("modal-title") ? "modal-title" : "modal-title").innerText = item.title;
+  document.getElementById("modal-desc").innerText = item.desc || item.subtitle;
+  document.getElementById("player-meta").innerHTML = `<span>${item.source}</span><span>${(item.type||'MP4').toUpperCase()}</span><span style="color:#4ade80">● REPRODUZINDO</span>`;
+  
+  if(item.type === 'mp4' || item.url.match(/\.mp4|\.webm|\.m4v/)){
+    container.innerHTML = `
+      <video id="active-video-player" controls autoplay playsinline preload="auto" style="width:100%;height:100%;object-fit:contain;background:#000" src="${item.url}" poster="${item.poster}">
+        Seu navegador não suporta reprodução de vídeo.
+      </video>`;
+    
+    const videoEl = document.getElementById("active-video-player");
+    if(videoEl){
+      videoEl.play().catch(err => {
+        console.warn("Autoplay bloqueado pelo navegador, aguardando interação:", err);
+      });
+      videoEl.onerror = () => {
+        console.error("Erro ao carregar o vídeo direto, tentando fallback Blender...");
+        videoEl.src = "https://download.blender.org/peach/bigbuckbunny_movies/BigBuckBunny_640x360.m4v";
+        videoEl.play().catch(() => {});
+      };
+    }
+  } else {
+    // Para embeds (YouTube, PeerTube)
+    let embedUrl = item.url;
+    if(!embedUrl.includes('autoplay=1')){
+      embedUrl += (embedUrl.includes('?') ? '&' : '?') + 'autoplay=1';
+    }
+    container.innerHTML = `<iframe src="${embedUrl}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
+  }
+  
+  modal.classList.remove("hidden");
 }
 
+function setupModal(){
+  const modal = document.getElementById("player-modal");
+  const btnClose = document.getElementById("modal-close");
+  btnClose.onclick = () => {
+    modal.classList.add("hidden");
+    document.getElementById("player-container").innerHTML = "";
+  };
+  modal.onclick = e => {
+    if(e.target === modal) btnClose.click();
+  };
+}
+
+function setupNavigation(){
+  document.querySelectorAll(".bottom-nav .nav-item").forEach(item=>{
+    item.onclick=e=>{
+     e.preventDefault();
+     document.querySelectorAll(".bottom-nav .nav-item").forEach(i=>i.classList.remove("active"));
+     item.classList.add("active");
+     if(item.dataset.tab==='series') document.getElementById("row-nasa").scrollIntoView({behavior:'smooth'});
+     if(item.dataset.tab==='filmes') document.getElementById("row-youtube").scrollIntoView({behavior:'smooth'});
+     if(item.dataset.tab==='infantil') document.getElementById("row-archive").scrollIntoView({behavior:'smooth'});
+    };
+  });
+}
+  
